@@ -14,11 +14,42 @@ def check_for_duplicates(components, log):
     seen = dict()
     for component in components:
         if component['name'] in seen:
-            log('%s has same name as %s' % (_stringify(component), _stringify(seen[component['name']])))
+            log('Warning: %s has same name as %s' % (_stringify(component), _stringify(seen[component['name']])))
         seen[component['name']] = component
 
 
-def check_skill_attribute_links(skills, attributes, log):
+def check_for_branch_duplicates(classes, log):
+    seen = dict()
+    for clazz in classes:
+        if 'branches' not in clazz:
+            continue
+
+        for branch_name in clazz['branches']:
+            if branch_name in seen:
+                log('Warning: branch "%s" from class "%s" has same name as branch "%s" from class "%s"'
+                    % (branch_name, clazz['name'], branch_name, seen[branch_name]))
+            seen[branch_name] = clazz['name']
+
+
+def check_class_fields(classes):
+    base_fields = ['type', 'preview', 'num_requirements', 'known_requirements', 'all_reqs_known']
+    full_fields = ['description', 'requirements', 'branches', 'passive', 'abilities']
+
+    for clazz in classes:
+        if 'name' not in clazz:
+            raise Exception('Missing "name" field in class, class=%s' % clazz)
+
+        for field in base_fields:
+            if field not in clazz:
+                raise Exception('Expected field "%s" to be present in class "%s"' % (field, clazz['name']))
+
+        if 'flavor_text' in clazz:
+            for field in full_fields:
+                if field not in clazz:
+                    raise Exception('Expected field "%s" to be present in full class "%s"' % (field, clazz['name']))
+
+
+def check_skill_attribute_links(skills, attributes):
     for skill in skills:
         try:
             get_component(skill['attribute'], attributes)
@@ -31,34 +62,16 @@ def check_class_skill_requirements(classes, skills, log):
     for clazz in classes:
         for skill_req in clazz['known_requirements']:
             if skill_req == get_link_skill_req(skill_req, skills):
-                log('Failed to find corresponding skill for class "%s"'
-                    ' hint requirement "%s"' % (clazz['name'], skill_req))
+                log('Warning: Failed to find corresponding skill for class "%s" hint requirement "%s"'
+                    % (clazz['name'], skill_req))
 
         if 'requirements' not in clazz:
             continue
 
         for skill_req in clazz['requirements']:
             if skill_req == get_link_skill_req(skill_req, skills):
-                log('Failed to find corresponding skill for class "%s" '
-                    'full description requirement "%s"' % (clazz['name'], skill_req))
-
-
-def check_class_branch_links(classes, branches):
-    for branch in branches:
-        try:
-            get_component(branch['class'], classes)
-        except KeyError:
-            raise Exception('Class "%s" for branch "%s" not found in classes.json' % (branch['class'], branch['name']))
-
-    for clazz in classes:
-        if 'branches' not in clazz:
-            continue
-
-        for branch_name in clazz['branches']:
-            try:
-                get_component(branch_name, branches, lambda b: b['class'] == clazz['name'])
-            except KeyError:
-                raise Exception('Branch "%s" in class "%s" not found in branch.json' % (branch_name, clazz['name']))
+                log('Warning: Failed to find corresponding skill for class "%s" full description requirement "%s"'
+                    % (clazz['name'], skill_req))
 
 
 def check_class_ability_links(classes, abilities):
@@ -75,26 +88,14 @@ def check_class_ability_links(classes, abilities):
 
         for ability_name in clazz['abilities']:
             try:
-                get_component(ability_name, abilities, lambda a: a['class'] == clazz['name'])
+                ability = get_component(ability_name, abilities, lambda a: a['class'] == clazz['name'])
             except KeyError:
-                raise Exception('Ability "%s" in class "%s" not found in abilities.json' % (ability_name, clazz['name']))
+                raise Exception('Ability "%s" in class "%s" not found in abilities.json'
+                                % (ability_name, clazz['name']))
 
-
-def check_branch_ability_links(branches, abilities):
-    for ability in abilities:
-        try:
-            get_component(ability['branch'], branches)
-        except KeyError:
-            raise Exception('Branch "%s" for ability "%s" not found in branches.json'
-                            % (ability['branch'], ability['name']))
-
-    for branch in branches:
-        for ability_name in branch['abilities']:
-            try:
-                get_component(ability_name, abilities, lambda a: a['branch'] == branch['name'])
-            except KeyError:
-                raise Exception('Ability "%s" in branch "%s" not found in abilities.json'
-                                % (ability_name, branch['name']))
+            if ability['branch'] not in clazz['branches']:
+                raise Exception('Ability "%s" in class "%s" has branch "%s" which is not listed in the class'
+                                % (ability_name, ability['class'], ability['branch']))
 
 
 def validate(log):
@@ -111,11 +112,6 @@ def validate(log):
         attributes = read_json_file(os.path.join(rulebook_path, 'attributes.json'))
     except json.JSONDecodeError as e:
         raise Exception('Failed to parse attributes.json file, %s' % str(e))
-
-    try:
-        branches = read_json_file(os.path.join(rulebook_path, 'branches.json'))
-    except json.JSONDecodeError as e:
-        raise Exception('Failed to parse branches.json file, %s' % str(e))
 
     try:
         buffs = read_json_file(os.path.join(rulebook_path, 'buffs.json'))
@@ -142,10 +138,10 @@ def validate(log):
     except json.JSONDecodeError as e:
         raise Exception('Failed to parse skills.json file, %s' % str(e))
 
-    check_for_duplicates(abilities + attributes + branches + buffs + classes + conditions + races + skills, log)
-    check_skill_attribute_links(skills, attributes, log)
+    check_for_duplicates(abilities + attributes + buffs + classes + conditions + races + skills, log)
+    check_for_branch_duplicates(classes, log)
+    check_class_fields(classes)
+    check_skill_attribute_links(skills, attributes)
     check_class_skill_requirements(classes, skills, log)
-    check_class_branch_links(classes, branches)
     check_class_ability_links(classes, abilities)
-    check_branch_ability_links(branches, abilities)
     log('Validated rulebook files')

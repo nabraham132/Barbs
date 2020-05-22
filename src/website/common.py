@@ -1,13 +1,20 @@
 import json
 
+from collections import OrderedDict
+
 
 def href(anchor, text):
     return '<a href="#{anchor}">{text}</a>'.format(anchor=anchor, text=text)
 
 
-def read_json_file(file_path):
+def read_json_file(file_path, sort=True):
     with open(file_path, 'r', encoding='utf8') as f:
-        return sorted(json.load(f), key=lambda item: item['name'])
+        components = json.load(f, object_pairs_hook=OrderedDict)
+
+    if sort:
+        return sorted(components, key=lambda item: item['name'])
+    else:
+        return components
 
 
 def get_component(component_name, component_list, condition=None):
@@ -23,9 +30,14 @@ def get_component(component_name, component_list, condition=None):
 
 
 def get_link_skill_req(skill_req, skills):
+    replaced = False
     for skill in skills:
         if skill['name'] in skill_req:
-            return skill_req.replace(skill['name'], href('skill_%s' % skill['name'], skill['name']))
+            skill_req = skill_req.replace(skill['name'], href('skill_%s' % skill['name'], skill['name']))
+            replaced = True
+
+    if replaced:
+        return skill_req
 
     for skill in skills:
         if 'any' in skill_req.lower() and skill['category'] in skill_req:
